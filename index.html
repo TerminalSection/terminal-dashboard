@@ -10797,58 +10797,6 @@
   .login-enroll-message.is-error { color: #ff6b7a; text-shadow: 0 0 8px rgba(255, 70, 90, .6); }
   .login-enroll-message.is-success { color: #9dffb0; }
 
-  /* Iframe Apps Script tidak mengizinkan kamera: arahkan ke versi GitHub
-     Pages yang bisa memakai kamera live. */
-  .login-redirect-panel {
-    position: absolute;
-    left: 50%;
-    bottom: calc(clamp(50px, 8cqh, 92px) + 92px);
-    z-index: 32;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    width: min(calc(100% - 32px), 420px);
-    padding: 16px 18px 14px;
-    box-sizing: border-box;
-    border: 1px solid rgba(126, 255, 247, .45);
-    background: rgba(2, 18, 24, .9);
-    box-shadow: 0 0 22px rgba(78, 255, 239, .22), inset 0 0 18px rgba(78, 255, 239, .08);
-    transform: translateX(-50%);
-    pointer-events: auto;
-    font-family: monospace;
-    text-align: center;
-    text-shadow: 0 0 9px rgba(83, 255, 244, .62);
-  }
-
-  .login-redirect-panel[hidden] { display: none; }
-  .login-redirect-panel label { color: #87fff5; font-size: 11px; letter-spacing: .3em; }
-  .login-redirect-hint { color: rgba(170, 255, 249, .85); font-size: 11px; letter-spacing: .05em; line-height: 1.5; }
-  .login-redirect-actions { display: flex; gap: 8px; width: 100%; }
-
-  .login-redirect-actions button,
-  .login-redirect-actions a {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 11px 10px;
-    border: 1px solid #82fff5;
-    background: rgba(78, 255, 239, .14);
-    color: #87fff5;
-    font: 700 10px monospace;
-    letter-spacing: .14em;
-    text-decoration: none;
-    cursor: pointer;
-  }
-
-  .login-redirect-actions a { background: rgba(78, 255, 239, .3); color: #d5fffb; }
-  .login-redirect-actions button:hover,
-  .login-redirect-actions button:focus-visible,
-  .login-redirect-actions a:hover,
-  .login-redirect-actions a:focus-visible { background: rgba(78, 255, 239, .4); }
-  .login-scan-overlay.is-redirect-mode .login-enroll-panel,
-  .login-scan-overlay.is-redirect-mode .login-enroll-trigger { display: none; }
 
   .login-scan-footer {
     position: absolute;
@@ -21524,7 +21472,6 @@
       })();
     </script>
     <script>globalThis.INITIAL_DASHBOARD_DATA = null;</script>
-    <script>globalThis.LIVE_CAMERA_URL = "";</script>
   </head>
   <body>
     <div class="login-scan-overlay is-awaiting-input" role="button" tabindex="0" aria-live="polite" aria-label="Masuk ke dashboard terminal section">
@@ -21579,14 +21526,6 @@
         </div>
         <small class="login-enroll-message" aria-live="polite"></small>
       </form>
-      <div class="login-redirect-panel" hidden>
-        <label>LIVE CAMERA REQUIRED</label>
-        <span class="login-redirect-hint">Kamera live tidak didukung di halaman ini. Buka versi kamera live untuk scan wajah.</span>
-        <div class="login-redirect-actions">
-          <button type="button" class="login-redirect-code">PAKAI KODE AKSES</button>
-          <a class="login-redirect-open" href="#" target="_blank" rel="noopener">BUKA VERSI KAMERA LIVE</a>
-        </div>
-      </div>
       <div class="login-scan-footer" aria-hidden="true"><span>LAT 03°41' S</span><i></i><span>LINK STABLE</span><i></i><span>LON 114°27' E</span></div>
       <div class="login-matrix-tunnel" aria-hidden="true">
         <canvas class="login-matrix-canvas"></canvas>
@@ -31163,23 +31102,6 @@
     return canvas.toDataURL('image/jpeg', 0.82);
   }
 
-  // Iframe Apps Script tidak mengizinkan kamera (atribut allow tanpa camera),
-  // sehingga getUserMedia ditolak tanpa pop-up izin.
-  function isCameraBlockedError(error) {
-    var name = error && error.name ? error.name : '';
-    return name === 'NotAllowedError'
-      || name === 'SecurityError'
-      || name === 'NotFoundError'
-      || name === 'NotReadableError'
-      || name === 'OverconstrainedError'
-      || Boolean(error && error.message === 'CAMERA_UNSUPPORTED');
-  }
-
-  // Halaman /exec (bukan versi GitHub Pages) yang tahu URL versi kamera live.
-  function canRedirectToLiveCamera() {
-    return !globalThis.__DASHBOARD_HOSTED__ && Boolean(globalThis.LIVE_CAMERA_URL);
-  }
-
   function describeFaceError(error) {
     var name = error && error.name ? error.name : '';
     var message = error && error.message ? error.message : '';
@@ -31331,9 +31253,6 @@
     var enrollSubmit = enrollPanel && enrollPanel.querySelector('.login-enroll-submit');
     var enrollCancel = enrollPanel && enrollPanel.querySelector('.login-enroll-cancel');
     var enrollMessage = enrollPanel && enrollPanel.querySelector('.login-enroll-message');
-    var redirectPanel = overlay.querySelector('.login-redirect-panel');
-    var redirectOpen = redirectPanel && redirectPanel.querySelector('.login-redirect-open');
-    var redirectCode = redirectPanel && redirectPanel.querySelector('.login-redirect-code');
     var enrollBusy = false;
     var enrollCancelled = false;
     var enrollReturnToPassword = false;
@@ -31356,36 +31275,6 @@
     function stopCamera() {
       stopFaceCamera(video);
       overlay.classList.remove('is-camera', 'has-face');
-    }
-
-    function closeRedirectPanel() {
-      overlay.classList.remove('is-redirect-mode');
-      if (redirectPanel) redirectPanel.hidden = true;
-    }
-
-    function showLiveCameraRedirect() {
-      stopCamera();
-      overlay.classList.remove('is-scanning', 'is-enrolling');
-      overlay.classList.add('is-redirect-mode');
-      overlay.setAttribute('aria-busy', 'false');
-      if (enrollPanel) enrollPanel.hidden = true;
-      updateStatus('LIVE CAMERA REQUIRED', 'BUKA VERSI KAMERA LIVE UNTUK SCAN WAJAH');
-      if (redirectOpen) redirectOpen.href = String(globalThis.LIVE_CAMERA_URL);
-      redirectPanel.hidden = false;
-    }
-
-    if (redirectPanel) {
-      redirectPanel.addEventListener('click', function(event) { event.stopPropagation(); });
-      redirectPanel.addEventListener('keydown', function(event) { event.stopPropagation(); });
-      if (redirectCode) {
-        redirectCode.addEventListener('click', function() {
-          accessStarted = true;
-          overlay.removeEventListener('click', startBiometricScan);
-          overlay.removeEventListener('keydown', startBiometricScan);
-          overlay.classList.remove('is-awaiting-input');
-          requestPasswordStep('ENTER ACCESS CODE');
-        });
-      }
     }
 
     function completeEntrance() {
@@ -31445,7 +31334,6 @@
 
     function requestPasswordStep(reason) {
       stopCamera();
-      closeRedirectPanel();
       overlay.classList.remove('is-scanning');
       overlay.classList.add('is-password');
       overlay.setAttribute('aria-busy', 'false');
@@ -31509,15 +31397,6 @@
       try {
         updateStatus('BIOMETRIC SCAN INITIALIZING...', 'MENYIAPKAN KAMERA & MODUL WAJAH');
         await startFaceCamera(video);
-      } catch (error) {
-        if (isCameraBlockedError(error) && canRedirectToLiveCamera()) {
-          showLiveCameraRedirect();
-        } else {
-          requestPasswordStep(describeFaceError(error));
-        }
-        return;
-      }
-      try {
         api = await ensureFaceModels();
         overlay.classList.add('is-camera');
       } catch (error) {
@@ -31669,17 +31548,7 @@
       setEnrollMessage('MENYIAPKAN KAMERA...', '');
       overlay.classList.add('is-scanning');
       try {
-        try {
-          await startFaceCamera(video);
-        } catch (error) {
-          if (isCameraBlockedError(error) && canRedirectToLiveCamera()) {
-            enrollBusy = false;
-            enrollPanel.classList.remove('is-capturing');
-            showLiveCameraRedirect();
-            return;
-          }
-          throw error;
-        }
+        await startFaceCamera(video);
         var api = await ensureFaceModels();
         if (enrollCancelled) return;
         overlay.classList.add('is-camera');
@@ -31751,7 +31620,6 @@
       overlay.setAttribute('aria-label', 'Masuk ke dashboard terminal section');
       if (passwordPanel) passwordPanel.hidden = true;
       if (enrollPanel) enrollPanel.hidden = true;
-      closeRedirectPanel();
       document.body.classList.add('login-sequence-active');
       document.body.classList.remove('dashboard-reveal-active');
       updateStatus(title || 'SECURE TERMINAL ACCESS', message || 'READY FOR BIOMETRIC AUTHORIZATION');
