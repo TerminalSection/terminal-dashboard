@@ -10708,27 +10708,37 @@
   .login-scan-overlay.is-camera.has-face .login-face-guide { border-style: solid; border-color: #82fff5; }
   .login-scan-overlay.is-camera .login-scan-progress i { animation: login-progress 3.1s ease-out infinite; }
 
-  .login-enroll-trigger {
+  .login-actions {
     position: absolute;
-    top: max(16px, env(safe-area-inset-top));
-    right: 16px;
+    left: 50%;
+    bottom: calc(clamp(50px, 8cqh, 92px) + 92px);
     z-index: 31;
-    padding: 8px 12px;
-    border: 1px solid rgba(126, 255, 247, .55);
-    background: rgba(2, 18, 24, .72);
-    color: #87fff5;
-    font: 700 10px monospace;
-    letter-spacing: .22em;
-    text-shadow: 0 0 9px rgba(83, 255, 244, .62);
-    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(86cqw, 320px);
+    transform: translateX(-50%);
     pointer-events: auto;
   }
 
-  .login-enroll-trigger:hover,
-  .login-enroll-trigger:focus-visible { background: rgba(78, 255, 239, .22); }
+  .login-action {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid rgba(126, 255, 247, .55);
+    background: rgba(2, 18, 24, .72);
+    color: #87fff5;
+    font: 700 11px monospace;
+    letter-spacing: .2em;
+    text-shadow: 0 0 9px rgba(83, 255, 244, .62);
+    cursor: pointer;
+  }
 
-  .login-scan-overlay:not(.is-awaiting-input):not(.is-password) .login-enroll-trigger { display: none; }
-  .login-scan-overlay.is-enrolling .login-enroll-trigger { display: none; }
+  .login-action:hover,
+  .login-action:focus-visible { background: rgba(78, 255, 239, .22); }
+
+  .login-scan-overlay:not(.is-awaiting-input) .login-actions,
+  .login-scan-overlay.is-enrolling .login-actions { display: none; }
 
   .login-enroll-panel {
     position: absolute;
@@ -10853,6 +10863,8 @@
     .login-scan-heading { top: 26px; }
     .login-scan-core { width: min(31cqw, 275px); }
     .login-scan-status { bottom: 44px; }
+    .login-actions { bottom: 136px; gap: 6px; }
+    .login-action { min-height: 38px; padding: 7px 12px; }
     .login-scan-footer { display: none; }
   }
 
@@ -21513,7 +21525,11 @@
         </div>
         <small id="loginPasswordError" class="login-password-error" aria-live="assertive"></small>
       </form>
-      <button type="button" class="login-enroll-trigger">DAFTAR WAJAH</button>
+      <div class="login-actions">
+        <button type="button" class="login-action login-face-trigger">MASUK DENGAN WAJAH</button>
+        <button type="button" class="login-action login-password-trigger">MASUK DENGAN PASSWORD</button>
+        <button type="button" class="login-action login-enroll-trigger">DAFTAR WAJAH</button>
+      </div>
       <form class="login-enroll-panel" hidden autocomplete="off" novalidate>
         <label>FACE REGISTRATION</label>
         <div class="login-enroll-fields">
@@ -31247,6 +31263,8 @@
     var passwordButton = passwordPanel && passwordPanel.querySelector('button[type="submit"]');
     var passwordError = passwordPanel && passwordPanel.querySelector('.login-password-error');
     var enrollTrigger = overlay.querySelector('.login-enroll-trigger');
+    var faceTrigger = overlay.querySelector('.login-face-trigger');
+    var passwordTrigger = overlay.querySelector('.login-password-trigger');
     var enrollPanel = overlay.querySelector('.login-enroll-panel');
     var enrollName = enrollPanel && enrollPanel.querySelector('input[name="enrollName"]');
     var enrollUnit = enrollPanel && enrollPanel.querySelector('input[name="enrollUnit"]');
@@ -31474,6 +31492,26 @@
       overlay.addEventListener('click', startBiometricScan);
       overlay.addEventListener('keydown', startBiometricScan);
     }
+
+    // Tombol aksi: klik tombol tidak boleh ikut memicu scan dari overlay.
+    function startFaceFromButton(event) {
+      event.stopPropagation();
+      startBiometricScan();
+    }
+
+    function startPasswordFromButton(event) {
+      event.stopPropagation();
+      if (accessStarted || loginCompleted || overlay.classList.contains('is-enrolling')) return;
+      unlockWindWarningAudio();
+      accessStarted = true;
+      overlay.removeEventListener('click', startBiometricScan);
+      overlay.removeEventListener('keydown', startBiometricScan);
+      overlay.classList.remove('is-awaiting-input');
+      requestPasswordStep('PASSWORD LOGIN');
+    }
+
+    if (faceTrigger) faceTrigger.addEventListener('click', startFaceFromButton);
+    if (passwordTrigger) passwordTrigger.addEventListener('click', startPasswordFromButton);
 
     // ---------- Pendaftaran wajah mandiri ----------
     function setEnrollMessage(text, tone) {
