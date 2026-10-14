@@ -10711,20 +10711,22 @@
   .login-actions {
     position: absolute;
     left: 50%;
-    bottom: calc(clamp(50px, 8cqh, 92px) + 92px);
+    bottom: calc(clamp(50px, 8cqh, 92px) + 80px);
     z-index: 31;
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: min(86cqw, 320px);
+    flex-direction: row;
+    justify-content: center;
+    gap: 14px;
     transform: translateX(-50%);
     pointer-events: auto;
   }
 
   .login-action {
-    width: 100%;
-    min-height: 44px;
-    padding: 10px 12px;
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    padding: 0;
     border: 1px solid rgba(126, 255, 247, .55);
     background: rgba(2, 18, 24, .72);
     color: #87fff5;
@@ -10733,6 +10735,8 @@
     text-shadow: 0 0 9px rgba(83, 255, 244, .62);
     cursor: pointer;
   }
+
+  .login-action svg { width: 26px; height: 26px; filter: drop-shadow(0 0 5px rgba(83, 255, 244, .7)); }
 
   .login-action:hover,
   .login-action:focus-visible { background: rgba(78, 255, 239, .22); }
@@ -10863,8 +10867,9 @@
     .login-scan-heading { top: 26px; }
     .login-scan-core { width: min(31cqw, 275px); }
     .login-scan-status { bottom: 44px; }
-    .login-actions { bottom: 136px; gap: 6px; }
-    .login-action { min-height: 38px; padding: 7px 12px; }
+    .login-actions { bottom: 130px; gap: 10px; }
+    .login-action { width: 46px; height: 46px; }
+    .login-action svg { width: 22px; height: 22px; }
     .login-scan-footer { display: none; }
   }
 
@@ -21526,9 +21531,9 @@
         <small id="loginPasswordError" class="login-password-error" aria-live="assertive"></small>
       </form>
       <div class="login-actions">
-        <button type="button" class="login-action login-face-trigger">MASUK DENGAN WAJAH</button>
-        <button type="button" class="login-action login-password-trigger">MASUK DENGAN PASSWORD</button>
-        <button type="button" class="login-action login-enroll-trigger">DAFTAR WAJAH</button>
+        <button type="button" class="login-action login-face-trigger" aria-label="Masuk dengan wajah" title="Masuk dengan wajah"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M9 10v1.5M15 10v1.5M9 15c.8.9 1.8 1.3 3 1.3s2.2-.4 3-1.3"/></svg></button>
+        <button type="button" class="login-action login-password-trigger" aria-label="Masuk dengan password" title="Masuk dengan password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3M12 15v2"/></svg></button>
+        <button type="button" class="login-action login-enroll-trigger" aria-label="Daftar wajah" title="Daftar wajah"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="4"/><path d="M3 21v-1a6 6 0 0 1 6-6h2M18 14v6M15 17h6"/></svg></button>
       </div>
       <form class="login-enroll-panel" hidden autocomplete="off" novalidate>
         <label>FACE REGISTRATION</label>
