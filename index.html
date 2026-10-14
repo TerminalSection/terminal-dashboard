@@ -31506,14 +31506,14 @@
         try {
           var capture = await captureLiveFace(api, video, {
             samples: FACE_LOGIN_SAMPLES,
-            photo: false,
+            photo: true,
             isCancelled: isStale,
             onFace: setFaceDetected,
             onStatus: function(title, message) { if (!isStale()) updateStatus(title, message); }
           });
           if (isStale()) return;
           updateStatus('MATCHING BIOMETRIC SIGNATURE...', 'VERIFYING WITH SECURE SERVER');
-          var result = await callLoginServer('verifyFaceLogin', averageFaceDescriptors(capture.descriptors));
+          var result = await callLoginServer('verifyFaceLogin', averageFaceDescriptors(capture.descriptors), capture.photo);
           if (isStale()) return;
           if (result && result.ok) {
             completeLogin(result.token, result.name);
