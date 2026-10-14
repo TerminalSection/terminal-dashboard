@@ -10736,31 +10736,49 @@
     cursor: pointer;
   }
 
-  .login-back {
-    position: absolute;
-    top: max(16px, env(safe-area-inset-top));
-    left: 16px;
-    z-index: 31;
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    padding: 0;
+  .login-back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     border: 1px solid rgba(126, 255, 247, .55);
     background: rgba(2, 18, 24, .72);
     color: #87fff5;
+    font: 700 11px monospace;
+    letter-spacing: .2em;
+    text-shadow: 0 0 9px rgba(83, 255, 244, .62);
     cursor: pointer;
     pointer-events: auto;
   }
 
-  .login-back svg { width: 22px; height: 22px; filter: drop-shadow(0 0 5px rgba(83, 255, 244, .7)); }
-  .login-back:hover,
-  .login-back:focus-visible { background: rgba(78, 255, 239, .22); }
+  .login-back-btn svg { width: 18px; height: 18px; filter: drop-shadow(0 0 5px rgba(83, 255, 244, .7)); }
+  .login-back-btn:hover,
+  .login-back-btn:focus-visible { background: rgba(78, 255, 239, .28); }
 
-  .login-scan-overlay:not(.is-scanning):not(.is-password):not(.is-enrolling) .login-back,
-  .login-scan-overlay.is-verified .login-back,
-  .login-scan-overlay.is-tunnel .login-back,
-  .login-scan-overlay.is-exiting .login-back { display: none; }
+  .login-password-panel .login-back-corner,
+  .login-enroll-panel .login-back-corner {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+  }
+
+  .login-back-scan {
+    position: absolute;
+    left: 50%;
+    bottom: calc(clamp(50px, 8cqh, 92px) + 92px);
+    z-index: 31;
+    padding: 10px 18px;
+    transform: translateX(-50%);
+  }
+
+  .login-scan-overlay:not(.is-scanning) .login-back-scan,
+  .login-scan-overlay.is-enrolling .login-back-scan,
+  .login-scan-overlay.is-verified .login-back-scan,
+  .login-scan-overlay.is-tunnel .login-back-scan,
+  .login-scan-overlay.is-exiting .login-back-scan { display: none; }
 
   .login-action svg { width: 26px; height: 26px; filter: drop-shadow(0 0 5px rgba(83, 255, 244, .7)); }
 
@@ -10894,6 +10912,7 @@
     .login-scan-core { width: min(31cqw, 275px); }
     .login-scan-status { bottom: 44px; }
     .login-actions { bottom: 130px; gap: 10px; }
+    .login-back-scan { bottom: 130px; }
     .login-action { width: 46px; height: 46px; }
     .login-action svg { width: 22px; height: 22px; }
     .login-scan-footer { display: none; }
@@ -21549,6 +21568,7 @@
         <div class="login-scan-progress"><i></i></div>
       </div>
       <form class="login-password-panel" hidden autocomplete="off" novalidate>
+        <button type="button" class="login-back-btn login-back-corner" aria-label="Kembali" title="Kembali"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
         <label for="loginPassword">ACCESS CODE REQUIRED</label>
         <div class="login-password-row">
           <input id="loginPassword" type="password" inputmode="numeric" autocomplete="off" spellcheck="false" aria-describedby="loginPasswordError" />
@@ -21556,13 +21576,14 @@
         </div>
         <small id="loginPasswordError" class="login-password-error" aria-live="assertive"></small>
       </form>
-      <button type="button" class="login-back" aria-label="Kembali" title="Kembali"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button type="button" class="login-back-btn login-back-scan" aria-label="Kembali"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>BACK</span></button>
       <div class="login-actions">
         <button type="button" class="login-action login-face-trigger" aria-label="Masuk dengan wajah" title="Masuk dengan wajah"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M9 10v1.5M15 10v1.5M9 15c.8.9 1.8 1.3 3 1.3s2.2-.4 3-1.3"/></svg></button>
         <button type="button" class="login-action login-password-trigger" aria-label="Masuk dengan password" title="Masuk dengan password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3M12 15v2"/></svg></button>
         <button type="button" class="login-action login-enroll-trigger" aria-label="Daftar wajah" title="Daftar wajah"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="4"/><path d="M3 21v-1a6 6 0 0 1 6-6h2M18 14v6M15 17h6"/></svg></button>
       </div>
       <form class="login-enroll-panel" hidden autocomplete="off" novalidate>
+        <button type="button" class="login-back-btn login-back-corner" aria-label="Kembali" title="Kembali"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
         <label>FACE REGISTRATION</label>
         <div class="login-enroll-fields">
           <input name="enrollName" type="text" maxlength="60" placeholder="Nama lengkap" autocomplete="off" spellcheck="false" required />
@@ -31307,7 +31328,7 @@
     var enrollCancelled = false;
     var enrollReturnToPassword = false;
     var scanRunId = 0;
-    var backButton = overlay.querySelector('.login-back');
+    var backButtons = overlay.querySelectorAll('.login-back-btn');
     var deniedTimer = 0;
     var tunnel = createLoginMatrixTunnel(overlay.querySelector('.login-matrix-canvas'));
     var telemetry = createLoginMatrixTelemetry(overlay.querySelector('.login-matrix-tunnel'));
@@ -31595,7 +31616,9 @@
       armLoginOverlay();
     }
 
-    if (backButton) backButton.addEventListener('click', backToMenu);
+    Array.prototype.forEach.call(backButtons, function(button) {
+      button.addEventListener('click', backToMenu);
+    });
     if (faceTrigger) faceTrigger.addEventListener('click', startFaceFromButton);
     if (passwordTrigger) passwordTrigger.addEventListener('click', startPasswordFromButton);
 
