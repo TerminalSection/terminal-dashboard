@@ -30999,9 +30999,22 @@
   var FACE_LOGIN_MAX_ATTEMPTS = 3;
   var FACE_LOGIN_SAMPLES = 3;
   var FACE_REGISTRATION_SAMPLES = 5;
-  var FACE_CAPTURE_TIMEOUT_MS = 25000;
+  var FACE_CAPTURE_TIMEOUT_MS = 30000;
   var FACE_SAMPLE_INTERVAL_MS = 380;
   var FACE_MIN_BOX_RATIO = 0.22;
+  // Liveness: kedip ATAU toleh kepala. Landmark face-api kurang peka terhadap
+  // kelopak mata, jadi ambang kedip relatif terhadap baseline yang dikunci
+  // setelah kalibrasi (baseline tidak boleh ikut turun saat mata menutup).
+  var FACE_LIVENESS_CALIBRATION_FRAMES = 5;
+  var FACE_BLINK_CLOSED_RATIO = 0.8;
+  var FACE_BLINK_CLOSED_EAR = 0.2;
+  var FACE_BLINK_OPEN_RATIO = 0.9;
+  var FACE_TURN_MIN_YAW = 0.25;
+  var FACE_TURN_RETURN_YAW = 0.1;
+  var FACE_SAMPLE_MIN_EAR_RATIO = 0.85;
+  var FACE_SAMPLE_MAX_YAW = 0.12;
+  // ?faceDebug=1 menampilkan nilai EAR/yaw live untuk menyetel ambang.
+  var FACE_DEBUG = /[?&]faceDebug=1(&|$)/.test(globalThis.location ? globalThis.location.search : '');
   var faceModelsPromise = null;
 
   function loadExternalScript(src) {
@@ -31096,6 +31109,38 @@
     return (distance(eye[1], eye[5]) + distance(eye[2], eye[4])) / (2 * width);
   }
 
+  function averagePoint(points) {
+    var x = 0;
+    var y = 0;
+    points.forEach(function(point) {
+      x += point.x;
+      y += point.y;
+    });
+    return { x: x / points.length, y: y / points.length };
+  }
+
+  // Posisi hidung (titik 30) sepanjang sumbu kedua mata, dinormalisasi jarak
+  // antar-mata: ~0 saat menghadap depan, membesar saat kepala menoleh. Diproyeksikan
+  // ke sumbu mata agar kepala miring (roll) tidak terbaca sebagai menoleh.
+  function getFaceYaw(positions) {
+    var left = averagePoint(positions.slice(36, 42));
+    var right = averagePoint(positions.slice(42, 48));
+    var nose = positions[30];
+    var axisX = right.x - left.x;
+    var axisY = right.y - left.y;
+    var eyeDistance = Math.hypot(axisX, axisY);
+    if (!eyeDistance) return 0;
+    var offsetX = nose.x - (left.x + right.x) / 2;
+    var offsetY = nose.y - (left.y + right.y) / 2;
+    return (offsetX * axisX + offsetY * axisY) / (eyeDistance * eyeDistance);
+  }
+
+  function medianValue(values) {
+    var sorted = values.slice().sort(function(left, right) { return left - right; });
+    var middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
   function averageFaceDescriptors(descriptors) {
     var average = [];
     for (var index = 0; index < descriptors[0].length; index++) {
@@ -31144,29 +31189,35 @@
     if (message === 'CAMERA_UNSUPPORTED') return 'BROWSER TIDAK MENDUKUNG KAMERA';
     if (message === 'FACE_API_UNAVAILABLE' || message === 'FACE_MODEL_UNAVAILABLE') return 'MODUL PENGENAL WAJAH GAGAL DIMUAT';
     if (message === 'SERVER_UNAVAILABLE') return 'SERVER TIDAK TERJANGKAU';
-    if (message === 'FACE_TIMEOUT') return 'WAJAH / KEDIPAN TIDAK TERDETEKSI';
+    if (message === 'FACE_TIMEOUT') return 'KEDIP / TOLEHAN TIDAK TERDETEKSI';
     return 'PEMINDAIAN WAJAH GAGAL';
   }
 
-  // Mendeteksi wajah dari kamera, meminta satu kedipan (liveness: foto diam
-  // tidak bisa berkedip), lalu mengambil beberapa descriptor saat mata terbuka.
+  // Mendeteksi wajah dari kamera, meminta bukti liveness (pejam mata atau
+  // toleh kepala; foto diam tidak bisa melakukannya), lalu mengambil beberapa
+  // descriptor saat mata terbuka dan wajah menghadap kamera.
   async function captureLiveFace(api, video, options) {
     var detectorOptions = new api.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
     var deadline = Date.now() + FACE_CAPTURE_TIMEOUT_MS;
-    var baseline = 0;
-    var openFrames = 0;
+    var calibrationEars = [];
+    var calibrationYaws = [];
+    var baselineEar = 0;
+    var baselineYaw = 0;
     var eyesClosed = false;
-    var blinked = false;
+    var headTurned = false;
+    var livenessPassed = false;
     var lastSampleAt = 0;
     var descriptors = [];
     var photo = '';
     var lastStatus = '';
+    var debugText = '';
 
     function status(title, message) {
-      var key = title + '|' + message;
+      var text = FACE_DEBUG && debugText ? message + ' // ' + debugText : message;
+      var key = title + '|' + text;
       if (key === lastStatus) return;
       lastStatus = key;
-      options.onStatus(title, message);
+      options.onStatus(title, text);
     }
 
     status('POSITION YOUR FACE IN THE FRAME', 'LIHAT LURUS KE KAMERA');
@@ -31175,7 +31226,7 @@
       if (Date.now() > deadline) throw new Error('FACE_TIMEOUT');
 
       var task = api.detectSingleFace(video, detectorOptions).withFaceLandmarks();
-      var detection = blinked ? await task.withFaceDescriptor() : await task;
+      var detection = livenessPassed ? await task.withFaceDescriptor() : await task;
       if (options.isCancelled()) throw new Error('FACE_CANCELLED');
       var box = detection && detection.detection && detection.detection.box;
       if (!box || box.width < (video.videoWidth || 640) * FACE_MIN_BOX_RATIO) {
@@ -31188,26 +31239,60 @@
 
       var ear = (getEyeAspectRatio(detection.landmarks.getLeftEye())
         + getEyeAspectRatio(detection.landmarks.getRightEye())) / 2;
+      var yaw = getFaceYaw(detection.landmarks.positions);
+      var yawOffset = Math.abs(yaw - baselineYaw);
+      if (FACE_DEBUG) {
+        debugText = 'EAR ' + ear.toFixed(2) + ' / BASE ' + baselineEar.toFixed(2)
+          + ' / YAW ' + (yaw - baselineYaw >= 0 ? '+' : '') + (yaw - baselineYaw).toFixed(2);
+      }
 
-      if (!blinked) {
-        if (!eyesClosed) {
-          if (!baseline || ear >= baseline * 0.8) {
-            baseline = baseline ? baseline * 0.8 + ear * 0.2 : ear;
-            openFrames++;
-          }
-          if (openFrames >= 3) {
-            status('BLINK SLOWLY TO CONFIRM', 'KEDIPKAN MATA PERLAHAN');
-            if (ear < baseline * 0.72) eyesClosed = true;
-          }
-        } else if (ear > baseline * 0.88) {
-          blinked = true;
-          status('LIVENESS CONFIRMED', 'TAHAN POSISI // MENGAMBIL DATA WAJAH');
+      if (calibrationEars.length < FACE_LIVENESS_CALIBRATION_FRAMES) {
+        calibrationEars.push(ear);
+        calibrationYaws.push(yaw);
+        status('HOLD STILL // CALIBRATING', 'LIHAT KAMERA, MATA TERBUKA');
+        if (calibrationEars.length === FACE_LIVENESS_CALIBRATION_FRAMES) {
+          baselineEar = medianValue(calibrationEars);
+          baselineYaw = medianValue(calibrationYaws);
         }
         await waitMs(30);
         continue;
       }
 
-      if (ear < baseline * 0.82 || !detection.descriptor) continue;
+      if (!livenessPassed) {
+        // Baseline hanya boleh naik (mis. kalibrasi saat mata agak sipit),
+        // tidak pernah ikut turun ketika mata perlahan menutup.
+        if (!eyesClosed && !headTurned && ear > baselineEar && yawOffset < FACE_SAMPLE_MAX_YAW) {
+          baselineEar = baselineEar * 0.7 + ear * 0.3;
+        }
+        if (ear < baselineEar * FACE_BLINK_CLOSED_RATIO
+          || (ear < FACE_BLINK_CLOSED_EAR && ear < baselineEar * FACE_BLINK_OPEN_RATIO)) {
+          eyesClosed = true;
+        } else if (eyesClosed && ear > baselineEar * FACE_BLINK_OPEN_RATIO) {
+          livenessPassed = true;
+        }
+        if (yawOffset > FACE_TURN_MIN_YAW) {
+          headTurned = true;
+        } else if (headTurned && yawOffset < FACE_TURN_RETURN_YAW) {
+          livenessPassed = true;
+        }
+
+        if (livenessPassed) {
+          status('LIVENESS CONFIRMED', 'TAHAN POSISI // MENGAMBIL DATA WAJAH');
+        } else if (eyesClosed) {
+          status('EYES CLOSED DETECTED', 'BUKA MATA KEMBALI');
+        } else if (headTurned) {
+          status('HEAD TURN DETECTED', 'KEMBALI MENGHADAP KAMERA');
+        } else {
+          status('BLINK OR TURN YOUR HEAD', 'PEJAMKAN MATA 1 DETIK, ATAU TOLEH KE SAMPING');
+        }
+        await waitMs(30);
+        continue;
+      }
+
+      if (ear < baselineEar * FACE_SAMPLE_MIN_EAR_RATIO || yawOffset > FACE_SAMPLE_MAX_YAW || !detection.descriptor) {
+        status('CAPTURING BIOMETRIC SIGNATURE', 'BUKA MATA & HADAP KAMERA');
+        continue;
+      }
       if (Date.now() - lastSampleAt < FACE_SAMPLE_INTERVAL_MS) {
         await waitMs(60);
         continue;
@@ -31482,7 +31567,7 @@
           return;
         }
         updateStatus('ACCESS DENIED', reason === 'TIMEOUT'
-          ? 'WAJAH / KEDIPAN TIDAK TERDETEKSI // ' + attempt + '/' + FACE_LOGIN_MAX_ATTEMPTS
+          ? 'KEDIP / TOLEHAN TIDAK TERDETEKSI // ' + attempt + '/' + FACE_LOGIN_MAX_ATTEMPTS
           : 'WAJAH TIDAK TERDAFTAR // ' + attempt + '/' + FACE_LOGIN_MAX_ATTEMPTS);
         await waitMs(FACE_RESULT_PAUSE_MS);
         if (faceCancelled) return;
