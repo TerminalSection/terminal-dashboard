@@ -10736,6 +10736,32 @@
     cursor: pointer;
   }
 
+  .login-back {
+    position: absolute;
+    top: max(16px, env(safe-area-inset-top));
+    left: 16px;
+    z-index: 31;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid rgba(126, 255, 247, .55);
+    background: rgba(2, 18, 24, .72);
+    color: #87fff5;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .login-back svg { width: 22px; height: 22px; filter: drop-shadow(0 0 5px rgba(83, 255, 244, .7)); }
+  .login-back:hover,
+  .login-back:focus-visible { background: rgba(78, 255, 239, .22); }
+
+  .login-scan-overlay:not(.is-scanning):not(.is-password):not(.is-enrolling) .login-back,
+  .login-scan-overlay.is-verified .login-back,
+  .login-scan-overlay.is-tunnel .login-back,
+  .login-scan-overlay.is-exiting .login-back { display: none; }
+
   .login-action svg { width: 26px; height: 26px; filter: drop-shadow(0 0 5px rgba(83, 255, 244, .7)); }
 
   .login-action:hover,
@@ -21530,6 +21556,7 @@
         </div>
         <small id="loginPasswordError" class="login-password-error" aria-live="assertive"></small>
       </form>
+      <button type="button" class="login-back" aria-label="Kembali" title="Kembali"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
       <div class="login-actions">
         <button type="button" class="login-action login-face-trigger" aria-label="Masuk dengan wajah" title="Masuk dengan wajah"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M9 10v1.5M15 10v1.5M9 15c.8.9 1.8 1.3 3 1.3s2.2-.4 3-1.3"/></svg></button>
         <button type="button" class="login-action login-password-trigger" aria-label="Masuk dengan password" title="Masuk dengan password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3M12 15v2"/></svg></button>
@@ -31279,6 +31306,8 @@
     var enrollBusy = false;
     var enrollCancelled = false;
     var enrollReturnToPassword = false;
+    var scanRunId = 0;
+    var backButton = overlay.querySelector('.login-back');
     var deniedTimer = 0;
     var tunnel = createLoginMatrixTunnel(overlay.querySelector('.login-matrix-canvas'));
     var telemetry = createLoginMatrixTelemetry(overlay.querySelector('.login-matrix-tunnel'));
@@ -31416,13 +31445,24 @@
 
     async function runFaceLogin() {
       var api;
+      var myRun = ++scanRunId;
       faceCancelled = false;
+      // Kembali ke menu menaikkan scanRunId: scan lama berhenti total.
+      function isStale() { return myRun !== scanRunId || faceCancelled; }
       try {
         updateStatus('BIOMETRIC SCAN INITIALIZING...', 'MENYIAPKAN KAMERA & MODUL WAJAH');
         await startFaceCamera(video);
         api = await ensureFaceModels();
+        if (isStale()) {
+          if (myRun === scanRunId) stopCamera();
+          return;
+        }
         overlay.classList.add('is-camera');
       } catch (error) {
+        if (isStale()) {
+          if (myRun === scanRunId) stopCamera();
+          return;
+        }
         requestPasswordStep(describeFaceError(error));
         return;
       }
@@ -31433,20 +31473,21 @@
           var capture = await captureLiveFace(api, video, {
             samples: FACE_LOGIN_SAMPLES,
             photo: false,
-            isCancelled: function() { return faceCancelled; },
+            isCancelled: isStale,
             onFace: setFaceDetected,
-            onStatus: updateStatus
+            onStatus: function(title, message) { if (!isStale()) updateStatus(title, message); }
           });
+          if (isStale()) return;
           updateStatus('MATCHING BIOMETRIC SIGNATURE...', 'VERIFYING WITH SECURE SERVER');
           var result = await callLoginServer('verifyFaceLogin', averageFaceDescriptors(capture.descriptors));
-          if (faceCancelled) return;
+          if (isStale()) return;
           if (result && result.ok) {
             completeLogin(result.token, result.name);
             return;
           }
           reason = result && result.reason ? result.reason : 'UNKNOWN';
         } catch (error) {
-          if (faceCancelled) return;
+          if (isStale()) return;
           if (error && error.message === 'FACE_TIMEOUT') {
             reason = 'TIMEOUT';
           } else {
@@ -31459,12 +31500,14 @@
         if (reason === 'PENDING') {
           updateStatus('ACCESS PENDING', 'WAJAH MENUNGGU PERSETUJUAN ADMIN');
           await waitMs(FACE_RESULT_PAUSE_MS * 1.5);
+          if (isStale()) return;
           requestPasswordStep('FACE AWAITING APPROVAL');
           return;
         }
         if (reason === 'REJECTED') {
           updateStatus('ACCESS DENIED', 'PENDAFTARAN WAJAH DITOLAK ADMIN');
           await waitMs(FACE_RESULT_PAUSE_MS * 1.5);
+          if (isStale()) return;
           requestPasswordStep('FACE ACCESS REJECTED');
           return;
         }
@@ -31472,7 +31515,7 @@
           ? 'KEDIP / TOLEHAN TIDAK TERDETEKSI // ' + attempt + '/' + FACE_LOGIN_MAX_ATTEMPTS
           : 'WAJAH TIDAK TERDAFTAR // ' + attempt + '/' + FACE_LOGIN_MAX_ATTEMPTS);
         await waitMs(FACE_RESULT_PAUSE_MS);
-        if (faceCancelled) return;
+        if (isStale()) return;
       }
       requestPasswordStep('FACE NOT RECOGNIZED');
     }
@@ -31515,6 +31558,44 @@
       requestPasswordStep('PASSWORD LOGIN');
     }
 
+    // Kembali ke menu awal dari scan wajah, panel password, atau pendaftaran.
+    function backToMenu(event) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (loginCompleted) return;
+      scanRunId++;
+      faceCancelled = true;
+      enrollCancelled = true;
+      enrollBusy = false;
+      stopCamera();
+      globalThis.clearTimeout(deniedTimer);
+      if (passwordPanel) passwordPanel.hidden = true;
+      if (passwordInput) {
+        passwordInput.value = '';
+        passwordInput.blur();
+      }
+      if (passwordButton) passwordButton.disabled = false;
+      if (passwordError) passwordError.textContent = '';
+      if (enrollPanel) {
+        enrollPanel.hidden = true;
+        enrollPanel.classList.remove('is-capturing');
+      }
+      if (enrollSubmit) enrollSubmit.disabled = false;
+      if (enrollCancel) enrollCancel.textContent = 'BATAL';
+      setEnrollMessage('', '');
+      enrollReturnToPassword = false;
+      accessStarted = false;
+      overlay.className = 'login-scan-overlay is-awaiting-input';
+      overlay.setAttribute('tabindex', '0');
+      overlay.setAttribute('aria-busy', 'false');
+      overlay.setAttribute('aria-label', 'Masuk ke dashboard terminal section');
+      updateStatus('SECURE TERMINAL ACCESS', 'READY FOR BIOMETRIC AUTHORIZATION');
+      armLoginOverlay();
+    }
+
+    if (backButton) backButton.addEventListener('click', backToMenu);
     if (faceTrigger) faceTrigger.addEventListener('click', startFaceFromButton);
     if (passwordTrigger) passwordTrigger.addEventListener('click', startPasswordFromButton);
 
@@ -31547,20 +31628,8 @@
     }
 
     function closeEnrollment() {
-      enrollCancelled = true;
-      stopCamera();
-      enrollBusy = false;
-      overlay.classList.remove('is-enrolling', 'is-scanning');
-      if (enrollPanel) {
-        enrollPanel.hidden = true;
-        enrollPanel.classList.remove('is-capturing');
-      }
-      if (enrollReturnToPassword) {
-        requestPasswordStep('FACE LOGIN UNAVAILABLE');
-      } else {
-        updateStatus('SECURE TERMINAL ACCESS', 'READY FOR BIOMETRIC AUTHORIZATION');
-        overlay.focus && overlay.focus();
-      }
+      backToMenu();
+      overlay.focus && overlay.focus();
     }
 
     function describeEnrollResult(result) {
