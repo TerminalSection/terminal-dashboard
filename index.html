@@ -25901,9 +25901,14 @@
       minutes = 0;
     }
     var degreeWidth = axis === 'latitude' ? 2 : 3;
+    // Huruf hemisfer wajib tampil agar tanda yang salah langsung terlihat.
+    var hemisphere = axis === 'latitude'
+      ? (numericValue < 0 ? 'S' : 'N')
+      : (numericValue < 0 ? 'W' : 'E');
     return String(degrees).padStart(degreeWidth, '0')
       + ' '
-      + minutes.toFixed(2).padStart(5, '0');
+      + minutes.toFixed(2).padStart(5, '0')
+      + ' ' + hemisphere;
   }
 
   function formatMapEtaCompact(value) {
