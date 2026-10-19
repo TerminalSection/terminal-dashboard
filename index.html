@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover">
-    <title>Visualisasi Data Terminal Section</title>
+    <title>Terminal Dashboard</title>
     <!-- Fallback font sempit bila Arial Narrow lokal tidak tersedia/diblokir
          browser (mis. proteksi fingerprinting Brave). -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21698,7 +21698,7 @@
             <span class="weather-tertiary"></span>
           </a>
         </div>
-        <h1><span>VISUALISASI DATA TERMINAL SECTION</span></h1>
+        <h1><span>TERMINAL DASHBOARD</span></h1>
         <div class="header-clock-cluster">
           <time datetime="">--:--:--</time>
           <button class="fullscreen-toggle" type="button" aria-label="Aktifkan layar penuh" aria-pressed="false" title="Layar penuh">
@@ -22152,7 +22152,7 @@
   var DASHBOARD_DATA = {
     config: DASHBOARD_CONFIG,
     header: {
-      titleTop: 'VISUALISASI DATA TERMINAL SECTION',
+      titleTop: 'TERMINAL DASHBOARD',
       titleBottom: '',
       weather: {
         location: 'Taboneo, Indonesia',
@@ -28792,7 +28792,7 @@
       var titleText = [header.titleTop, header.titleBottom].filter(Boolean).join(' ').trim();
       title.textContent = '';
       var titleSpan = document.createElement('span');
-      titleSpan.textContent = titleText || 'VISUALISASI DATA TERMINAL SECTION';
+      titleSpan.textContent = titleText || 'TERMINAL DASHBOARD';
       title.appendChild(titleSpan);
     }
     renderWeather(header.weather);
