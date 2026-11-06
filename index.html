@@ -22076,7 +22076,11 @@
               headers: { 'Content-Type': 'text/plain;charset=utf-8' },
               body: JSON.stringify({ fn: property, args: args })
             })
-              .then(function(response) { return response.json(); })
+              // Halaman HTML (mis. "Akses Ditolak" dari Google) bukan respons API;
+              // laporkan sebagai server tidak terjangkau, bukan kode salah.
+              .then(function(response) {
+                return response.json().catch(function() { throw new Error('SERVER_UNAVAILABLE'); });
+              })
               .then(function(payload) {
                 if (payload && payload.ok) {
                   if (onSuccess) onSuccess(payload.result);
@@ -31470,7 +31474,9 @@
       updateStatus('ACCESS DENIED', message || 'INVALID ACCESS CODE');
       if (passwordError) passwordError.textContent = message === 'TOO MANY ATTEMPTS'
         ? 'TERLALU BANYAK PERCOBAAN // COBA 10 MENIT LAGI'
-        : 'AKSES DITOLAK // KODE SALAH';
+        : message === 'INVALID ACCESS CODE'
+          ? 'AKSES DITOLAK // KODE SALAH'
+          : 'SERVER TIDAK TERJANGKAU // COBA LAGI';
       flashDenied();
       passwordInput.value = '';
       passwordInput.focus();
@@ -31497,9 +31503,9 @@
         passwordPanel.hidden = true;
         if (passwordError) passwordError.textContent = '';
         completeLogin(result.token, '');
-      }).catch(function(error) {
+      }).catch(function() {
         if (passwordButton) passwordButton.disabled = false;
-        denyAccess(describeFaceError(error));
+        denyAccess('SERVER UNREACHABLE');
       });
     }
 
