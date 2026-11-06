@@ -22096,7 +22096,7 @@
   })();
 </script>
 <script>
-  var MAP_EXPLORER_BUILD = '2026-10-12-master-kapal-completed-label-102';
+  var MAP_EXPLORER_BUILD = '2026-11-06-barge-condition-column-103';
   document.documentElement.setAttribute('data-map-explorer-build', MAP_EXPLORER_BUILD);
 
   function isMobilePerformanceMode() {
@@ -28225,6 +28225,31 @@
     return isLineUpRowInOperationalWindow(row, kind, statusKey, windowValue);
   }
 
+  // Barge_Line Up memisahkan Status (Downstream/Arriving/Discharging) dan
+  // Condition (To be Completed/Completed). Keduanya dihitung sendiri-sendiri,
+  // jadi satu baris menghasilkan hingga dua entri hitung dengan status masing-masing.
+  function expandBargeLineUpRows(rows, kind) {
+    if (kind !== 'barge') return rows;
+    var expanded = [];
+    rows.forEach(function(row) {
+      if (!row) return;
+      var statusKey = normalizeLineUpStatus(row.rawStatus !== undefined ? row.rawStatus : row.status);
+      var conditionKey = normalizeLineUpStatus(row.condition);
+      var entries = 0;
+      if (statusKey && statusKey !== 'to be completed' && statusKey !== 'completed') {
+        expanded.push(Object.assign({}, row, { status: row.rawStatus !== undefined ? row.rawStatus : row.status }));
+        entries += 1;
+      }
+      if (conditionKey === 'to be completed' || conditionKey === 'completed') {
+        expanded.push(Object.assign({}, row, { status: row.condition }));
+        entries += 1;
+      }
+      // Baris lama tanpa field rawStatus/condition tetap dihitung apa adanya.
+      if (!entries && row.rawStatus === undefined && row.condition === undefined) expanded.push(row);
+    });
+    return expanded;
+  }
+
   function renderLineUpRadar(widgetSelector, rows, kind) {
     var widget = document.querySelector(widgetSelector);
     if (!widget) return;
@@ -28236,7 +28261,7 @@
     var supportedStatuses = {};
     definitions.forEach(function(item) { supportedStatuses[item.key] = true; });
     var cutoffWindow = getSelectedLineUpOperationalWindow();
-    var supportedRows = (Array.isArray(rows) ? rows : []).filter(function(row) {
+    var supportedRows = expandBargeLineUpRows(Array.isArray(rows) ? rows : [], kind).filter(function(row) {
       var status = normalizeLineUpStatus(row && row.status);
       // Incoming/Arriving/Loading/Discharging/To Be Completed adalah kondisi
       // line-up aktif dan selalu ditampilkan tanpa filter tanggal. Hanya
@@ -28254,6 +28279,7 @@
         String(row && row.name || '').trim(),
         String(row && row.tugName || '').trim(),
         normalizeLineUpStatus(row && row.status),
+        normalizeLineUpStatus(row && row.condition),
         normalizeLineUpLocation(row && row.location),
         row && row.latitude,
         row && row.longitude,
