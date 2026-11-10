@@ -24775,12 +24775,33 @@
     };
   }
 
-  // Barge yang titik layarnya berdekatan (koordinat sama atau hampir sama
-  // pada zoom saat ini) disusun dalam staggered grid di sekitar pusatnya,
-  // agar setiap pin terlihat dan bisa diklik. Posisi geografis (left/top)
-  // tidak diubah; hanya offset visual --cluster-offset dan anchor label.
-  function spreadBargeCoordinatePins(pins) {
-    var clusterDistance = 40;
+  // Area sebar barge berukuran tetap di peta (meter), bukan di layar. Saat zoom
+  // out area ikut mengecil sehingga pin boleh menumpuk; saat zoom in area
+  // melebar sampai jarak maksimum piksel di bawah.
+  var BARGE_SPREAD_GAP_METERS = 250;
+  var BARGE_SPREAD_MAX_GAP_PX = 64;
+  var BARGE_SPREAD_LABEL_HINT_MIN_PX = 36;
+
+  // Barge yang berjarak < BARGE_SPREAD_GAP_METERS disusun dalam staggered grid
+  // di sekitar pusatnya agar setiap pin terlihat dan bisa diklik. Posisi
+  // geografis (left/top) tidak diubah; hanya offset visual --cluster-offset
+  // dan anchor label.
+  function spreadBargeCoordinatePins(pins, layout) {
+    if (!pins.length) return;
+    var referenceLatitude = Number(pins[0].latitude);
+    var referenceLongitude = Number(pins[0].longitude);
+    var cosReference = Math.cos(referenceLatitude * Math.PI / 180);
+    pins.forEach(function(pin) {
+      // Pendekatan equirectangular cukup akurat untuk jarak beberapa km.
+      pin.meterX = (Number(pin.longitude) - referenceLongitude) * cosReference * 111320;
+      pin.meterY = -(Number(pin.latitude) - referenceLatitude) * 110540;
+    });
+    var pixelsPerMeter = Number(layout && layout.tileSize) * Math.pow(2, Number(layout && layout.zoom))
+      / (40075016.686 * Math.max(.01, cosReference));
+    if (!isFinite(pixelsPerMeter) || pixelsPerMeter <= 0) pixelsPerMeter = 0;
+    var meterToPixel = Math.min(pixelsPerMeter, BARGE_SPREAD_MAX_GAP_PX / BARGE_SPREAD_GAP_METERS);
+    var showLabelHint = BARGE_SPREAD_GAP_METERS * meterToPixel >= BARGE_SPREAD_LABEL_HINT_MIN_PX;
+
     var parent = pins.map(function(pin, index) { return index; });
     function find(index) {
       while (parent[index] !== index) {
@@ -24791,16 +24812,17 @@
     }
     for (var i = 0; i < pins.length; i += 1) {
       for (var j = i + 1; j < pins.length; j += 1) {
-        if (Math.hypot(pins[i].x - pins[j].x, pins[i].y - pins[j].y) < clusterDistance) {
+        if (Math.hypot(pins[i].meterX - pins[j].meterX, pins[i].meterY - pins[j].meterY)
+          < BARGE_SPREAD_GAP_METERS) {
           parent[find(i)] = find(j);
         }
       }
     }
-    // Staggered grid: baris ganjil digeser setengah kolom (pola bata/hex),
-    // sehingga jarak diagonal antar pin = hypot(23, 40) ≈ 46px.
-    var columnGap = 46;
-    var rowGap = 40;
-    var footprintMargin = 22;
+    // Staggered grid (dalam meter): baris ganjil digeser setengah kolom
+    // (pola bata/hex), sehingga jarak diagonal ≈ jarak kolom.
+    var columnGap = BARGE_SPREAD_GAP_METERS;
+    var rowGap = BARGE_SPREAD_GAP_METERS * 40 / 46;
+    var footprintMargin = BARGE_SPREAD_GAP_METERS / 2;
 
     function collectGroups() {
       var collected = Object.create(null);
@@ -24811,14 +24833,15 @@
       return Object.keys(collected).map(function(root) { return collected[root]; });
     }
 
+    // Menghasilkan targetMeterX/Y tiap pin dan footprint grid dalam meter.
     function layoutStaggeredGroup(members) {
       var centerX = 0;
       var centerY = 0;
       members.forEach(function(pin) {
-        centerX += pin.x / members.length;
-        centerY += pin.y / members.length;
-        pin.targetX = pin.x;
-        pin.targetY = pin.y;
+        centerX += pin.meterX / members.length;
+        centerY += pin.meterY / members.length;
+        pin.targetMeterX = pin.meterX;
+        pin.targetMeterY = pin.meterY;
         pin.labelSideHint = '';
       });
       if (members.length > 1) {
@@ -24834,16 +24857,16 @@
           var rowShift = row % 2 ? columnGap / 2 : 0;
           var relativeX = (column - (countInRow - 1) / 2) * columnGap + rowShift - columnGap / 4;
           var relativeY = (row - (rows - 1) / 2) * rowGap;
-          pin.targetX = centerX + relativeX;
-          pin.targetY = centerY + relativeY;
+          pin.targetMeterX = centerX + relativeX;
+          pin.targetMeterY = centerY + relativeY;
           pin.labelSideHint = relativeX < 0 ? 'left' : 'right';
         });
       }
       return {
-        left: Math.min.apply(null, members.map(function(pin) { return pin.targetX; })) - footprintMargin,
-        right: Math.max.apply(null, members.map(function(pin) { return pin.targetX; })) + footprintMargin,
-        top: Math.min.apply(null, members.map(function(pin) { return pin.targetY; })) - footprintMargin,
-        bottom: Math.max.apply(null, members.map(function(pin) { return pin.targetY; })) + footprintMargin
+        left: Math.min.apply(null, members.map(function(pin) { return pin.targetMeterX; })) - footprintMargin,
+        right: Math.max.apply(null, members.map(function(pin) { return pin.targetMeterX; })) + footprintMargin,
+        top: Math.min.apply(null, members.map(function(pin) { return pin.targetMeterY; })) - footprintMargin,
+        bottom: Math.max.apply(null, members.map(function(pin) { return pin.targetMeterY; })) + footprintMargin
       };
     }
 
@@ -24874,6 +24897,28 @@
     groups.forEach(layoutStaggeredGroup);
 
     groups.forEach(function(members) {
+      // Pusat grid di layar = rata-rata titik proyeksi anggota; posisi relatif
+      // grid dikonversi dari meter memakai skala zoom saat ini.
+      var centerPixelX = 0;
+      var centerPixelY = 0;
+      var centerMeterX = 0;
+      var centerMeterY = 0;
+      members.forEach(function(pin) {
+        centerPixelX += pin.x / members.length;
+        centerPixelY += pin.y / members.length;
+        centerMeterX += pin.meterX / members.length;
+        centerMeterY += pin.meterY / members.length;
+      });
+      members.forEach(function(pin) {
+        if (members.length > 1) {
+          pin.targetX = centerPixelX + (pin.targetMeterX - centerMeterX) * meterToPixel;
+          pin.targetY = centerPixelY + (pin.targetMeterY - centerMeterY) * meterToPixel;
+        } else {
+          pin.targetX = pin.x;
+          pin.targetY = pin.y;
+        }
+        if (!showLabelHint) pin.labelSideHint = '';
+      });
       members.forEach(function(pin) {
         var offsetX = pin.targetX - pin.x;
         var offsetY = pin.targetY - pin.y;
@@ -24962,11 +25007,17 @@
       bullet.classList.add('is-coordinate-position');
       bullet.classList.toggle('is-coordinate-offscreen', !insideCoordinateViewport);
       if (!isMasterVessel) {
-        bargePins.push({ bullet: bullet, x: screenX, y: screenY });
+        bargePins.push({
+          bullet: bullet,
+          x: screenX,
+          y: screenY,
+          latitude: latitude,
+          longitude: longitude
+        });
       }
     });
 
-    spreadBargeCoordinatePins(bargePins);
+    spreadBargeCoordinatePins(bargePins, layout);
 
     backdrop._coordinateLastLayout = layout;
     var motionActive = backdrop.classList.contains('is-zooming')
