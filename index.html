@@ -24679,6 +24679,7 @@
         return {
           bullet: bullet,
           label: label,
+          sideHint: String(bullet.dataset.labelSideHint || ''),
           anchorX: anchorX,
           anchorY: anchorY,
           width: Math.max(labelRect.width || 0, Math.min(250, Math.max(92, textLength * 6.2 + 20))),
@@ -24730,8 +24731,11 @@
             offsetX: offsetX,
             offsetY: offsetY,
             box: box,
+            // Pin dalam staggered grid barge condong memasang label di sisi
+            // luar grid (kiri/kanan); bias ini tetap kalah dari penalti overlap.
             score: overlap * 100000 + overflow * 100000
               + Math.hypot(offsetX, offsetY) + directionIndex * .1 + ring * .01 + itemIndex * .0001
+              + (item.sideHint ? (direction.name === item.sideHint ? -60 : 40) : 0)
           });
         }
       });
@@ -24772,7 +24776,7 @@
   }
 
   // Barge yang titik layarnya berdekatan (koordinat sama atau hampir sama
-  // pada zoom saat ini) disusun melingkar di sekitar titik pusat kelompoknya,
+  // pada zoom saat ini) disusun dalam staggered grid di sekitar pusatnya,
   // agar setiap pin terlihat dan bisa diklik. Posisi geografis (left/top)
   // tidak diubah; hanya offset visual --cluster-offset dan anchor label.
   function spreadBargeCoordinatePins(pins) {
@@ -24792,14 +24796,22 @@
         }
       }
     }
-    var groups = Object.create(null);
-    pins.forEach(function(pin, index) {
-      var root = find(index);
-      (groups[root] = groups[root] || []).push(pin);
-    });
+    // Staggered grid: baris ganjil digeser setengah kolom (pola bata/hex),
+    // sehingga jarak diagonal antar pin = hypot(23, 40) ≈ 46px.
+    var columnGap = 46;
+    var rowGap = 40;
+    var footprintMargin = 22;
 
-    Object.keys(groups).forEach(function(root) {
-      var members = groups[root];
+    function collectGroups() {
+      var collected = Object.create(null);
+      pins.forEach(function(pin, index) {
+        var root = find(index);
+        (collected[root] = collected[root] || []).push(pin);
+      });
+      return Object.keys(collected).map(function(root) { return collected[root]; });
+    }
+
+    function layoutStaggeredGroup(members) {
       var centerX = 0;
       var centerY = 0;
       members.forEach(function(pin) {
@@ -24807,23 +24819,61 @@
         centerY += pin.y / members.length;
         pin.targetX = pin.x;
         pin.targetY = pin.y;
+        pin.labelSideHint = '';
       });
       if (members.length > 1) {
         members.sort(function(first, second) {
           return Number(first.bullet.dataset.pinNumber || 0) - Number(second.bullet.dataset.pinNumber || 0);
         });
-        var index = 0;
-        for (var ring = 0; index < members.length; ring += 1) {
-          var radius = 48 + ring * 44;
-          var capacity = Math.max(4, Math.floor(2 * Math.PI * radius / 44));
-          var count = Math.min(capacity, members.length - index);
-          for (var slot = 0; slot < count; slot += 1, index += 1) {
-            var angle = (-90 + slot * 360 / count + (ring % 2 ? 180 / count : 0)) * Math.PI / 180;
-            members[index].targetX = centerX + Math.cos(angle) * radius;
-            members[index].targetY = centerY + Math.sin(angle) * radius;
+        var columns = Math.max(2, Math.ceil(Math.sqrt(members.length * 1.15)));
+        var rows = Math.ceil(members.length / columns);
+        members.forEach(function(pin, index) {
+          var row = Math.floor(index / columns);
+          var column = index % columns;
+          var countInRow = Math.min(columns, members.length - row * columns);
+          var rowShift = row % 2 ? columnGap / 2 : 0;
+          var relativeX = (column - (countInRow - 1) / 2) * columnGap + rowShift - columnGap / 4;
+          var relativeY = (row - (rows - 1) / 2) * rowGap;
+          pin.targetX = centerX + relativeX;
+          pin.targetY = centerY + relativeY;
+          pin.labelSideHint = relativeX < 0 ? 'left' : 'right';
+        });
+      }
+      return {
+        left: Math.min.apply(null, members.map(function(pin) { return pin.targetX; })) - footprintMargin,
+        right: Math.max.apply(null, members.map(function(pin) { return pin.targetX; })) + footprintMargin,
+        top: Math.min.apply(null, members.map(function(pin) { return pin.targetY; })) - footprintMargin,
+        bottom: Math.max.apply(null, members.map(function(pin) { return pin.targetY; })) + footprintMargin
+      };
+    }
+
+    // Grid yang melebar bisa menimpa pin lain di dekatnya. Gabungkan kelompok
+    // yang jejak (footprint) gridnya bersinggungan, lalu susun ulang.
+    var groups = collectGroups();
+    for (var pass = 0; pass < 6; pass += 1) {
+      var boxes = groups.map(layoutStaggeredGroup);
+      var merged = false;
+      for (var a = 0; a < groups.length; a += 1) {
+        for (var b = a + 1; b < groups.length; b += 1) {
+          var first = boxes[a];
+          var second = boxes[b];
+          if (first.left < second.right && second.left < first.right
+            && first.top < second.bottom && second.top < first.bottom) {
+            var rootA = find(pins.indexOf(groups[a][0]));
+            var rootB = find(pins.indexOf(groups[b][0]));
+            if (rootA !== rootB) {
+              parent[rootA] = rootB;
+              merged = true;
+            }
           }
         }
       }
+      if (!merged) break;
+      groups = collectGroups();
+    }
+    groups.forEach(layoutStaggeredGroup);
+
+    groups.forEach(function(members) {
       members.forEach(function(pin) {
         var offsetX = pin.targetX - pin.x;
         var offsetY = pin.targetY - pin.y;
@@ -24831,6 +24881,11 @@
         pin.bullet.style.setProperty('--cluster-offset-y', offsetY.toFixed(2) + 'px');
         pin.bullet.dataset.coordinateLeft = pin.targetX.toFixed(2);
         pin.bullet.dataset.coordinateTop = pin.targetY.toFixed(2);
+        if (pin.labelSideHint) {
+          pin.bullet.dataset.labelSideHint = pin.labelSideHint;
+        } else {
+          delete pin.bullet.dataset.labelSideHint;
+        }
         pin.bullet.classList.toggle('is-barge-spread-pin', members.length > 1);
       });
     });
