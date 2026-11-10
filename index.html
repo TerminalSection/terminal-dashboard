@@ -24771,12 +24771,78 @@
     };
   }
 
+  // Barge yang titik layarnya berdekatan (koordinat sama atau hampir sama
+  // pada zoom saat ini) disusun melingkar di sekitar titik pusat kelompoknya,
+  // agar setiap pin terlihat dan bisa diklik. Posisi geografis (left/top)
+  // tidak diubah; hanya offset visual --cluster-offset dan anchor label.
+  function spreadBargeCoordinatePins(pins) {
+    var clusterDistance = 40;
+    var parent = pins.map(function(pin, index) { return index; });
+    function find(index) {
+      while (parent[index] !== index) {
+        parent[index] = parent[parent[index]];
+        index = parent[index];
+      }
+      return index;
+    }
+    for (var i = 0; i < pins.length; i += 1) {
+      for (var j = i + 1; j < pins.length; j += 1) {
+        if (Math.hypot(pins[i].x - pins[j].x, pins[i].y - pins[j].y) < clusterDistance) {
+          parent[find(i)] = find(j);
+        }
+      }
+    }
+    var groups = Object.create(null);
+    pins.forEach(function(pin, index) {
+      var root = find(index);
+      (groups[root] = groups[root] || []).push(pin);
+    });
+
+    Object.keys(groups).forEach(function(root) {
+      var members = groups[root];
+      var centerX = 0;
+      var centerY = 0;
+      members.forEach(function(pin) {
+        centerX += pin.x / members.length;
+        centerY += pin.y / members.length;
+        pin.targetX = pin.x;
+        pin.targetY = pin.y;
+      });
+      if (members.length > 1) {
+        members.sort(function(first, second) {
+          return Number(first.bullet.dataset.pinNumber || 0) - Number(second.bullet.dataset.pinNumber || 0);
+        });
+        var index = 0;
+        for (var ring = 0; index < members.length; ring += 1) {
+          var radius = 48 + ring * 44;
+          var capacity = Math.max(4, Math.floor(2 * Math.PI * radius / 44));
+          var count = Math.min(capacity, members.length - index);
+          for (var slot = 0; slot < count; slot += 1, index += 1) {
+            var angle = (-90 + slot * 360 / count + (ring % 2 ? 180 / count : 0)) * Math.PI / 180;
+            members[index].targetX = centerX + Math.cos(angle) * radius;
+            members[index].targetY = centerY + Math.sin(angle) * radius;
+          }
+        }
+      }
+      members.forEach(function(pin) {
+        var offsetX = pin.targetX - pin.x;
+        var offsetY = pin.targetY - pin.y;
+        pin.bullet.style.setProperty('--cluster-offset-x', offsetX.toFixed(2) + 'px');
+        pin.bullet.style.setProperty('--cluster-offset-y', offsetY.toFixed(2) + 'px');
+        pin.bullet.dataset.coordinateLeft = pin.targetX.toFixed(2);
+        pin.bullet.dataset.coordinateTop = pin.targetY.toFixed(2);
+        pin.bullet.classList.toggle('is-barge-spread-pin', members.length > 1);
+      });
+    });
+  }
+
   function layoutMapCoordinateVesselPins(layout) {
     var layer = document.querySelector('.vessel-map-layer');
     if (!layer || !layout || !layout.projection) return;
     var backdrop = document.querySelector('.map-coordinate-backdrop');
     var activeMode = String(backdrop && backdrop._coordinateMode || 'vessel');
     var layerRect = getLayoutRect(layer);
+    var bargePins = [];
 
     Array.prototype.forEach.call(layer.querySelectorAll('.map-vessel-bullet'), function(bullet) {
       var row = bullet._vesselMapRow || {};
@@ -24810,8 +24876,14 @@
       if (!screenPoint) return;
       var screenX = screenPoint.x;
       var screenY = screenPoint.y;
-      var displayOffsetX = Number(bullet.dataset.coordinateDisplayOffsetX || 0);
-      var displayOffsetY = Number(bullet.dataset.coordinateDisplayOffsetY || 0);
+      // Offset barge dihitung setelah loop dari jarak layar (lihat
+      // spreadBargeCoordinatePins), sehingga di sini hanya kapal master.
+      var displayOffsetX = isMasterVessel
+        ? Number(bullet.dataset.coordinateDisplayOffsetX || 0)
+        : 0;
+      var displayOffsetY = isMasterVessel
+        ? Number(bullet.dataset.coordinateDisplayOffsetY || 0)
+        : 0;
       if (!isFinite(displayOffsetX)) displayOffsetX = 0;
       if (!isFinite(displayOffsetY)) displayOffsetY = 0;
       var localX = screenX - layerRect.left;
@@ -24834,7 +24906,12 @@
       bullet.dataset.coordinateTop = (screenY + displayOffsetY).toFixed(2);
       bullet.classList.add('is-coordinate-position');
       bullet.classList.toggle('is-coordinate-offscreen', !insideCoordinateViewport);
+      if (!isMasterVessel) {
+        bargePins.push({ bullet: bullet, x: screenX, y: screenY });
+      }
     });
+
+    spreadBargeCoordinatePins(bargePins);
 
     backdrop._coordinateLastLayout = layout;
     var motionActive = backdrop.classList.contains('is-zooming')
@@ -26238,35 +26315,6 @@
     };
   }
 
-  function assignBargeCoordinateDisplayOffsets(rows) {
-    var groups = Object.create(null);
-    (rows || []).forEach(function(row) {
-      row.coordinateDisplayOffsetX = 0;
-      row.coordinateDisplayOffsetY = 0;
-      var key = Number(row.latitude).toFixed(6) + '|' + Number(row.longitude).toFixed(6);
-      (groups[key] = groups[key] || []).push(row);
-    });
-    Object.keys(groups).forEach(function(key) {
-      var members = groups[key];
-      if (members.length < 2) return;
-      members.sort(function(a, b) {
-        return Number(a.sourceRow || 0) - Number(b.sourceRow || 0)
-          || String(a.id).localeCompare(String(b.id));
-      });
-      var index = 0;
-      for (var ring = 0; index < members.length; ring += 1) {
-        var radius = 56 + ring * 44;
-        var capacity = Math.max(6, Math.floor(2 * Math.PI * radius / 42));
-        var count = Math.min(capacity, members.length - index);
-        for (var slot = 0; slot < count; slot += 1, index += 1) {
-          var angle = (-90 + slot * 360 / count + (ring % 2 ? 180 / count : 0)) * Math.PI / 180;
-          members[index].coordinateDisplayOffsetX = Math.cos(angle) * radius;
-          members[index].coordinateDisplayOffsetY = Math.sin(angle) * radius;
-        }
-      }
-    });
-  }
-
   function getVesselFleetIdDisplay(row) {
     if (!row) return '';
     var combined = String(row.loadedBy || '').trim();
@@ -26325,9 +26373,8 @@
       .map(normalizeBargeMapRow)
       .filter(Boolean);
     // Koordinat barge adalah salinan langsung Current Latitude/Longitude dari
-    // spreadsheet dan tidak diubah. Barge pada titik yang sama hanya diberi
-    // offset visual (piksel) berbentuk cincin agar semua pin bisa diklik.
-    assignBargeCoordinateDisplayOffsets(activeBargeRows);
+    // spreadsheet dan tidak diubah. Barge yang berdekatan hanya diberi offset
+    // visual saat layout peta koordinat (spreadBargeCoordinatePins).
     var renderSignature = getVesselMapRenderSignature(dateVesselRows.concat(activeBargeRows));
     if (layer.dataset.renderSignature === renderSignature
       && layer.querySelector('#map-vessel-hologram')) return;
@@ -27294,8 +27341,6 @@
       anchor.dataset.actualLeft = point.x.toFixed(3);
       anchor.dataset.actualTop = point.y.toFixed(3);
       anchor.dataset.pinNumber = String(index + 1).padStart(2, '0');
-      anchor.dataset.coordinateDisplayOffsetX = Number(row.coordinateDisplayOffsetX || 0).toFixed(2);
-      anchor.dataset.coordinateDisplayOffsetY = Number(row.coordinateDisplayOffsetY || 0).toFixed(2);
       anchor.dataset.bargeName = row.displayName || row.name || 'Tug / Tongkang';
       anchor.setAttribute('aria-label', 'Buka informasi ' + (row.displayName || row.name || 'tug dan tongkang'));
       var anchorLabel = document.createElement('span');
