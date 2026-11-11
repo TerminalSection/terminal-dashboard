@@ -28413,6 +28413,7 @@
   // Condition (To be Completed/Completed). Keduanya dihitung sendiri-sendiri,
   // jadi satu baris menghasilkan hingga dua entri hitung dengan status masing-masing.
   function expandBargeLineUpRows(rows, kind) {
+    if (kind === 'vessel') return expandVesselLineUpRows(rows);
     if (kind !== 'barge') return rows;
     var expanded = [];
     rows.forEach(function(row) {
@@ -28430,6 +28431,28 @@
       }
       // Baris lama tanpa field rawStatus/condition tetap dihitung apa adanya.
       if (!entries && row.rawStatus === undefined && row.condition === undefined) expanded.push(row);
+    });
+    return expanded;
+  }
+
+  // Vessel_Line Up: Status = kondisi saat ini (Incoming/Arriving/Loading/
+  // Completed), Condition = To be Completed (kondisi pukul 06:00 hari
+  // berikutnya). Kapal Loading yang diperkirakan selesai dihitung di Loading
+  // sekaligus To Be Completed. Baris lama ber-Status "To be Completed" tanpa
+  // Condition tetap dihitung sebagai To Be Completed.
+  function expandVesselLineUpRows(rows) {
+    var expanded = [];
+    rows.forEach(function(row) {
+      if (!row) return;
+      var rawStatus = row.rawStatus !== undefined ? row.rawStatus : row.status;
+      var statusKey = normalizeLineUpStatus(rawStatus);
+      var conditionKey = normalizeLineUpStatus(row.condition);
+      if (statusKey && statusKey !== 'to be completed') {
+        expanded.push(Object.assign({}, row, { status: rawStatus }));
+      }
+      if (conditionKey === 'to be completed' || (statusKey === 'to be completed' && !conditionKey)) {
+        expanded.push(Object.assign({}, row, { status: 'To be Completed' }));
+      }
     });
     return expanded;
   }
