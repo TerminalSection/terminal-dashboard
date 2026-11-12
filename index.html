@@ -28350,8 +28350,10 @@
   function getVesselLineUpCompletionMs(row) {
     var numeric = Number(row && row.completionMs);
     if (isFinite(numeric) && numeric > 0) return numeric;
-    // Fallback untuk payload lama: waktu Completed Vessel berasal dari kolom
-    // Tanggal pada Vessel_Line Up, bukan dari Est Comc Load FTU/FC.
+    // Server sudah menentukan completionMs (null = kapal belum Completed di
+    // Master_Kapal), jadi jangan dihitung ulang dari Tanggal.
+    if (row && row.completionMs === null) return NaN;
+    // Fallback untuk payload lama (tanpa field completionMs): kolom Tanggal.
     return parseLineUpCompletionMs(row && (row.dateTime || row.tanggal || row.date));
   }
 
