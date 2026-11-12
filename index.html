@@ -23851,7 +23851,8 @@
     var rows = HIGHLIGHT_STATE.rows.filter(function(row) {
       return isRowInOperationalWindow(row, selectedDate);
     }).sort(function(a, b) {
-      return Number(b.duration || 0) - Number(a.duration || 0);
+      var byName = String(a.fcName || '').localeCompare(String(b.fcName || ''), 'id', { numeric: true, sensitivity: 'base' });
+      return byName || Number(b.duration || 0) - Number(a.duration || 0);
     });
     var displayRows = rows.slice();
     if (!rows.length) {
